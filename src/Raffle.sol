@@ -2,6 +2,9 @@
 
 pragma solidity ^0.8.18;
 
+import {VRFCoordinatorV2Interface} from "../lib/chainlink-brownie-contracts/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import {VRFConsumerBaseV2} from "../lib/chainlink-brownie-contracts/contracts/src/v0.8/VRFConsumerBaseV2.sol";
+
 /**
  * @title A Sample Raffle Contract
  * @author Devansh goel
@@ -9,21 +12,53 @@ pragma solidity ^0.8.18;
  * @dev Implements ChainLink VRFv2
  */
 
-contract Raffle {
+contract Raffle is VRFConsumerBaseV2 {
     error Raffle__NotEnoughEthSent(); //Good Practice to name ur errors with 2 underscores after the Contract name
+    error Raffle__TransferFailed();
+    error Raffle__RaffleNotOpen();
+    /** Type declarratiosn*/
 
+    enum RaffleState {
+        OPEN, // In solidity these can be converted to integers; //0
+        CALCULATING //1
+        //CLOSE 2
+        //MIDWAY 3
+    }
+
+    /**State Variables*/
+    uint16 private constant REQUEST_CONFIRMTIONS = 3;
+    uint32 private constant NUM_WORDS = 1;
     uint256 private immutable i_entranceFee; // Maybe change depending on a contract but fixed for a contract thus of type immutable
-    address payable[] private s_players; //This array can be used to store Ethereum addresses that can receive Ether payments.
     uint256 private immutable i_interval; //@dev duration of lottery in seconds
+    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
+    bytes32 private immutable i_gasLane;
+    uint64 private immutable i_subscriptionId;
+    uint32 private immutable i_callbackGasLimit;
+    address payable[] private s_players; //This array can be used to store Ethereum addresses that can receive Ether payments.
     uint256 private s_lastTimeStamp;
+    address private s_recentWinner;
+    RaffleState private s_raffleState;
     // What data structure should we use? how to keep track of all the players
     /**Events */
     event EnteredRaffle(address indexed player);
+    event WinnerPicked(address indexed winner);
 
-    constructor(uint256 entranceFee, uint256 interval) {
+    constructor(
+        uint256 entranceFee,
+        uint256 interval,
+        address vrfCoordinator,
+        bytes32 gasLane,
+        uint64 subscriptionId,
+        uint32 callbackGasLimit
+    ) VRFConsumerBaseV2(vrfCoordinator) {
         i_entranceFee = entranceFee;
         i_interval = interval;
+        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinator);
+        i_gasLane = gasLane;
+        i_subscriptionId = subscriptionId;
         s_lastTimeStamp = block.timestamp;
+        i_callbackGasLimit = callbackGasLimit;
+        s_raffleState = RaffleState.OPEN;
     }
 
     //external more gas efficient
@@ -33,16 +68,47 @@ contract Raffle {
         if (msg.value < i_entranceFee) {
             revert Raffle__NotEnoughEthSent();
         }
+        if (s_raffleState != RaffleState.OPEN) {
+            revert Raffle__RaffleNotOpen();
+        }
         s_players.push(payable(msg.sender));
         emit EnteredRaffle(msg.sender);
     }
 
-    function pickWinner() external view {
+    function pickWinner() external {
         //2. use the random number to pick a player
         //3. Be automatically called
+
         if ((block.timestamp - s_lastTimeStamp) < i_interval) {
             revert();
-        } //1. Get a random number
+        }
+        s_raffleState = RaffleState.CALCULATING;
+        //1. Get a random number
+        uint256 requestId = i_vrfCoordinator.requestRandomWords( //Coordinator is the ChainLink VRF coordinator address
+            i_gasLane,
+            i_subscriptionId, // Id u have funded to make these requests
+            REQUEST_CONFIRMTIONS,
+            i_callbackGasLimit,
+            NUM_WORDS
+        );
+    }
+
+    function fulfillRandomWords(
+        uint256 requestId,
+        uint256[] memory randomWords
+    ) internal override {
+        uint256 indexofWinner = randomWords[0] % s_players.length;
+        address payable winner = s_players[indexofWinner];
+        s_recentWinner = winner;
+
+        s_raffleState = RaffleState.OPEN;
+        s_players = new address payable[](0);
+        s_lastTimeStamp = block.timestamp;
+        (bool success, ) = winner.call{value: address(this).balance}("");
+        if (!success) {
+            revert Raffle__TransferFailed();
+        }
+        emit WinnerPicked(winner);
     }
 
     /** Getter Function */
