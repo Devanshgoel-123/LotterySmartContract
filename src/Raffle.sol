@@ -16,6 +16,7 @@ contract Raffle is VRFConsumerBaseV2 {
     error Raffle__NotEnoughEthSent(); //Good Practice to name ur errors with 2 underscores after the Contract name
     error Raffle__TransferFailed();
     error Raffle__RaffleNotOpen();
+    error Raffle__UpKeepNotNeeded();
     /** Type declarratiosn*/
 
     enum RaffleState {
@@ -75,16 +76,27 @@ contract Raffle is VRFConsumerBaseV2 {
         emit EnteredRaffle(msg.sender);
     }
 
-    function pickWinner() external {
+    function checkUpkeep(
+        bytes memory /*checkData*/
+    ) public view returns (bool upkeepNeeded, bytes memory /* performData */) {
+        bool timeHasPassed = (block.timestamp - s_lastTimeStamp) < i_interval;
+        bool isOpen = RaffleState.OPEN == s_raffleState;
+        bool hasBalance = address(this).balance > 0;
+        bool hasPlayers = s_players.length > 0;
+        upkeepNeeded = (timeHasPassed && isOpen && hasBalance && hasPlayers);
+        return (upkeepNeeded, "0x0");
+    }
+
+    function performUpkeep(bytes calldata /*performData*/) external {
         //2. use the random number to pick a player
         //3. Be automatically called
-
-        if ((block.timestamp - s_lastTimeStamp) < i_interval) {
-            revert();
+        (bool upkeepNeeded, ) = checkUpkeep("");
+        if (!upkeepNeeded) {
+            revert Raffle__UpKeepNotNeeded();
         }
         s_raffleState = RaffleState.CALCULATING;
         //1. Get a random number
-        uint256 requestId = i_vrfCoordinator.requestRandomWords( //Coordinator is the ChainLink VRF coordinator address
+        i_vrfCoordinator.requestRandomWords( //Coordinator is the ChainLink VRF coordinator address
             i_gasLane,
             i_subscriptionId, // Id u have funded to make these requests
             REQUEST_CONFIRMTIONS,
@@ -93,8 +105,12 @@ contract Raffle is VRFConsumerBaseV2 {
         );
     }
 
+    // CEI: Checks, Effects, Interactions
+    //Write ur checks first more gas efficient
+    //Effects (Our own contract)
+    //Interactions with other contract
     function fulfillRandomWords(
-        uint256 requestId,
+        uint256 /*requestId*/,
         uint256[] memory randomWords
     ) internal override {
         uint256 indexofWinner = randomWords[0] % s_players.length;
@@ -115,5 +131,13 @@ contract Raffle is VRFConsumerBaseV2 {
 
     function getEntranceFees() external view returns (uint256) {
         return i_entranceFee;
+    }
+
+    function getRaffleState() external view returns (RaffleState) {
+        return s_raffleState;
+    }
+
+    function getPlayer(uint256 indexOfPlayer) external view returns (address) {
+        return s_players[indexOfPlayer];
     }
 }
