@@ -17,8 +17,8 @@ contract RaffleTest is Test {
     address vrfCoordinator;
     bytes32 gasLane;
     uint64 subscriptionId;
-    uint32 callbackGasLimi;
-
+    uint32 callbackGasLimit;
+    address link;
     address public PLAYER = makeAddr("player");
     uint256 public constant STARTING_USER_BALANCE = 10 ether;
 
@@ -31,7 +31,8 @@ contract RaffleTest is Test {
             vrfCoordinator,
             gasLane,
             subscriptionId,
-            callbackGasLimi
+            callbackGasLimit,
+            link
         ) = helperConfig.activeNetworkConfig();
         vm.deal(PLAYER, STARTING_USER_BALANCE);
     }
@@ -63,7 +64,9 @@ contract RaffleTest is Test {
     function testCantEnterWhenRaffleIsCalculating() public {
         vm.prank(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
+        console.log(block.timestamp);
         vm.warp(block.timestamp + interval + 1);
+        console.log(block.timestamp);
         vm.roll(block.number + 1);
         raffle.performUpkeep("");
         vm.expectRevert(Raffle.Raffle__RaffleNotOpen.selector); //This sets up an expectation that the next call or operation will revert.

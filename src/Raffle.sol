@@ -4,6 +4,7 @@ pragma solidity ^0.8.18;
 
 import {VRFCoordinatorV2Interface} from "../lib/chainlink-brownie-contracts/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import {VRFConsumerBaseV2} from "../lib/chainlink-brownie-contracts/contracts/src/v0.8/VRFConsumerBaseV2.sol";
+import {console} from "../lib/forge-std/src/console.sol";
 
 /**
  * @title A Sample Raffle Contract
@@ -79,10 +80,14 @@ contract Raffle is VRFConsumerBaseV2 {
     function checkUpkeep(
         bytes memory /*checkData*/
     ) public view returns (bool upkeepNeeded, bytes memory /* performData */) {
-        bool timeHasPassed = (block.timestamp - s_lastTimeStamp) < i_interval;
+        bool timeHasPassed = (block.timestamp - s_lastTimeStamp) > i_interval;
         bool isOpen = RaffleState.OPEN == s_raffleState;
         bool hasBalance = address(this).balance > 0;
         bool hasPlayers = s_players.length > 0;
+        console.log(timeHasPassed);
+        console.log(isOpen);
+        console.log(hasBalance);
+        console.log(hasPlayers);
         upkeepNeeded = (timeHasPassed && isOpen && hasBalance && hasPlayers);
         return (upkeepNeeded, "0x0");
     }
